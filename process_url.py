@@ -1,9 +1,16 @@
+import re
+import time
+import random
+from urllib.parse import urlparse, urljoin
 import requests
-import trafilatura
+from bs4 import BeautifulSoup
+from readability import Document
 from github import Github
 from youtube_transcript_api import YouTubeTranscriptApi
-import re
-from urllib.parse import urlparse
+from markdownify import markdownify as md
+import trafilatura
+from trafilatura.settings import use_config
+
 
 
 def detect_url_type(url):
@@ -13,30 +20,88 @@ def detect_url_type(url):
         return "youtube"
     else:
         return "web"
+
+def process_web_url(url, timeout=30):
+    """
+    Extract webpage HTML and convert to markdown.
     
-def process_web_url(url):
+    Args:
+        url (str): The URL to process
+        timeout (int): Request timeout in seconds
+        
+    Returns:
+        str: Markdown content or error message
+    """
     try:
-        downloaded = trafilatura.fetch_url(url)
+        # Validate URL
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return "Error: Invalid URL format"
         
-        if not downloaded:
-            return "Error: Could not fetch webpage"
+        # Get HTML content
+        html_content = fetch_with_requests(url, timeout)
         
-        markdown = trafilatura.extract(
-            downloaded,
-            output_format='markdown',
-            include_comments=False,
-            include_tables=True,
-            include_images=True,
-            include_links=True
-        )
+        if html_content.startswith("Error:"):
+            return html_content
         
-        if not markdown:
-            return "Error: Could not process markdwon for give page"
+        # Convert HTML to markdown
+        markdown = html_to_markdown(html_content, url)
+        
+        if not markdown or len(markdown.strip()) < 50:
+            return "Error: Could not extract meaningful content from webpage"
         
         return markdown
     
     except Exception as e:
-        return f"Error processing web URL: {e}"
+        return f"Error processing web URL: {type(e).__name__} - {str(e)}"
+
+
+def fetch_with_requests(url, timeout=30):
+    """Fetch HTML using requests with enhanced headers."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive',
+        }
+        
+        session = requests.Session()
+        response = session.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        response.raise_for_status()
+        
+        # Ensure proper encoding
+        response.encoding = response.apparent_encoding or 'utf-8'
+        
+        return response.text
+    
+    except requests.exceptions.RequestException as e:
+        return f"Error: Request failed - {str(e)}"
+
+
+def html_to_markdown(html, base_url=None):
+    """Convert raw HTML to cleaned markdown."""
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # Remove scripts, styles, and noscript tags
+        for tag in soup(["script", "style", "noscript"]):
+            tag.extract()
+        
+        # Convert relative links to absolute
+        if base_url:
+            for a in soup.find_all("a", href=True):
+                a["href"] = urljoin(base_url, a["href"])
+        
+        # Convert cleaned HTML to markdown
+        markdown = md(str(soup), heading_style="ATX")
+        return markdown.strip()
+    
+    except Exception as e:
+        return f"Error: Markdown conversion failed - {str(e)}"
+
     
 def get_repo_tree(repo, path="", depth=0, max_depth=2):
     """Recursively fetch repo contents up to max_depth and return as Markdown."""
