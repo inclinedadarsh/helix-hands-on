@@ -79,7 +79,3 @@ def process_file(file_path: str) -> str:
         raise RuntimeError("MarkItDown conversion did not return Markdown text")
 
     return markdown
-
-
-if __name__ == "__main__":
-    print(process_file("test.xlsx"))
