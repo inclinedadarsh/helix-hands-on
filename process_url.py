@@ -1,11 +1,9 @@
 import requests
 import trafilatura
 from github import Github
-import base64
 from youtube_transcript_api import YouTubeTranscriptApi
 import re
 from urllib.parse import urlparse
-import sys
 
 
 def detect_url_type(url):
@@ -40,32 +38,50 @@ def process_web_url(url):
     except Exception as e:
         return f"Error processing web URL: {e}"
     
+def get_repo_tree(repo, path="", depth=0, max_depth=2):
+    """Recursively fetch repo contents up to max_depth and return as Markdown."""
+    try:
+        contents = repo.get_contents(path)
+    except Exception:
+        return ""
+
+    tree_md = ""
+    for content in contents:
+        indent = "  " * depth
+        tree_md += f"{indent}- {content.name}\n"
+        if content.type == "dir" and depth < max_depth:
+            tree_md += get_repo_tree(repo, content.path, depth + 1, max_depth)
+    return tree_md
+    
 def process_github_url(url):
     try:
+        # Extract user/repo
         parts = url.split("github.com/")[1].split("/")
         user, repo_name = parts[0], parts[1].replace('.git', '')
-        
-        g = Github()
-        
+
+        g = Github()  # unauthenticated (60 req/hr)
         repo = g.get_repo(f"{user}/{repo_name}")
-        
+
         markdown_output = f"# Repository: {user}/{repo_name}\n\n"
         markdown_output += f"**URL:** https://github.com/{user}/{repo_name}\n\n"
+        markdown_output += f"**Description:** {repo.description or '*No description*'}\n\n"
         markdown_output += "---\n\n"
-        
+
+        # Add README
         try:
             readme = repo.get_readme()
             readme_content = readme.decoded_content.decode('utf-8')
             markdown_output += "## README\n\n"
             markdown_output += readme_content + "\n\n"
         except Exception:
-            # README not found
             markdown_output += "## README\n\n*No README found*\n\n"
-        
+
+        # Add repo structure
+        markdown_output += "## Repository Structure\n\n"
+        markdown_output += get_repo_tree(repo)
+
         return markdown_output
-    
-    except Exception as e:
-        return f"Error accessing GitHub repository: {e.status} - {e.data.get('message', str(e))}"
+
     except IndexError:
         return "Error: Invalid GitHub URL format. Expected format: https://github.com/user/repo"
     except Exception as e:
