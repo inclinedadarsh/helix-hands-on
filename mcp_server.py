@@ -9,15 +9,25 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("local_tools")
 
-# directory for storing user data (one level above current directory)
-BASE_DIR = Path(__file__).parent.parent / "data"
+# directory for storing user data (in uploads folder at project root)
+BASE_DIR = Path(__file__).parent / "uploads"
 
 def get_user_dir() -> Path:
-    """Get the user's directory based on USER_ID environment variable."""
+    """Get the user's directory based on USER_ID and SUBDIRECTORY environment variables.
+    
+    Returns:
+        Path to user's directory: uploads/<user_id>/processed/<subdirectory>/
+    """
     user_id = os.getenv("USER_ID")
     if not user_id:
         raise ValueError("USER_ID environment variable is not set")
-    user_dir = BASE_DIR / user_id
+    
+    subdirectory = os.getenv("SUBDIRECTORY")
+    if not subdirectory:
+        raise ValueError("SUBDIRECTORY environment variable is not set")
+    
+    user_dir = BASE_DIR / user_id / "processed" / subdirectory
+    
     return user_dir
 
 def validate_path(user_dir: Path, rel_path: str) -> Path:

@@ -1,13 +1,28 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-# from cerebras_client import process_user_request
-from openrouter_client import process_user_request
+from client import helix
 import logging
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Search Agent API")
+
+def ensure_user_directories(user_id: str) -> None:
+    """
+    Ensure the directory structure exists for a user.
+    Creates: uploads/<user_id>/processed/{links,docs,media}/
+    
+    Args:
+        user_id: Unique identifier for the user
+    """
+    base_path = Path(__file__).parent / "uploads" / user_id / "processed"
+    
+    for subdirectory in ["links", "docs", "media"]:
+        dir_path = base_path / subdirectory
+        dir_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Ensured directory exists: {dir_path}")
 
 class SearchRequest(BaseModel):
     user_id: str
@@ -20,12 +35,10 @@ class SearchResponse(BaseModel):
 
 @app.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
-    """
-    Handle a search request for a specific user.
-    """
     try:
         logger.info(f"Received search request from user: {request.user_id}")
-        result = await process_user_request(request.user_id, request.query)
+        ensure_user_directories(request.user_id)
+        result = await helix(request.user_id, request.query)
         return SearchResponse(
             user_id=request.user_id,
             query=request.query,
